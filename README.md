@@ -13,4 +13,4 @@ Ce projet est un Selfbot Discord en cours de développement.
 1. **Clone le projet** (ou télécharge les fichiers) :
    ```bash
    git clone https://github.com/roi0x/roiself.git
-   cd selfai
+   cd roiself
