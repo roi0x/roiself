@@ -1,6 +1,4 @@
 import sqlite3
-from discord.ext import commands
-import discord
 import asyncio
 from datetime import datetime
 import os
@@ -21,7 +19,6 @@ def setup(client, openai_api_key):
     ''')
     conn.commit()
     conn.close()
-
     @client.event
     async def on_message_delete(message):
 
@@ -42,48 +39,32 @@ def setup(client, openai_api_key):
             print(f"Erreur SQLite dans on_message_delete : {str(e)}")
         finally:
             conn.close()
-
-    @client.command()
-    async def snipe(ctx):
-
-        try:
-            await ctx.message.delete()
-        except discord.Forbidden:
-            print("Je n'ai pas la permission de supprimer le message.")
-        except discord.HTTPException as e:
-            if e.code == 20028:  
-                print("Limite de vitesse atteinte pour la suppression, je continue...")
-                await asyncio.sleep(5)
-            else:
-                raise e
-
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT author_name, content, timestamp
-                FROM deleted_messages
-                WHERE channel_id = ?
-            ''', (ctx.channel.id,))
-            result = cursor.fetchone()
-
-            if not result or not result[1]:
-                await ctx.send("Aucun message supprimé récent trouvé dans ce salon.", delete_after=5)
-                return
-
-            author, content, timestamp = result
-            timestamp = datetime.fromisoformat(timestamp).strftime('%Y-%m-%d à %H:%M')
-            snipe_message = (
-                f"__**Dernier message supprimé**__\n"
-                f"**Auteur** : {author}\n"
-                f"**Contenu** : {content}\n"
-                f"**Envoyé le** : {timestamp}"
-            )
-            await ctx.send(snipe_message, delete_after=20)
-
-        except discord.Forbidden:
-            print("Je n'ai pas la permission d'envoyer des messages.")
-        except Exception as e:
-            print(f"{str(e)}")
-        finally:
-            conn.close()
+    @client.event
+    async def on_message(message):
+        if message.author == client.user and message.content == '-snipe':
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT author_name, content, timestamp
+                    FROM deleted_messages
+                    WHERE channel_id = ?
+                ''', (message.channel.id,))
+                result = cursor.fetchone()
+                if not result or not result[1]:
+                    await message.channel.send("Aucun message supprimé récent trouvé dans ce salon.", delete_after=1)
+                    return
+                author, content, timestamp = result
+                timestamp = datetime.fromisoformat(timestamp).strftime('%Y-%m-%d à %H:%M')
+                snipe_message = (
+                    f"__**Dernier message supprimé**__\n"
+                    f"**Auteur** : {author}\n"
+                    f"**Contenu** : {content}\n"
+                    f"**Envoyé le** : {timestamp}"
+                )
+                await message.channel.send(snipe_message, delete_after=10)
+            except Exception as e:
+                print(f"Erreur : {str(e)}")
+            finally:
+                conn.close()
+        await client.process_commands(message)
