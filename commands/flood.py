@@ -1,70 +1,60 @@
-import sqlite3
+from discord.ext import commands
+import discord
 import asyncio
-from datetime import datetime
 import os
 
 def setup(client, openai_api_key):
 
-    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'deleted_messages.db')
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS deleted_messages (
-            channel_id INTEGER PRIMARY KEY,
-            author_name TEXT,
-            content TEXT,
-            timestamp TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-    @client.event
-    async def on_message_delete(message):
+    @client.command()
+    async def flood(ctx, file_path: str = None):
 
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO deleted_messages (channel_id, author_name, content, timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (
-                message.channel.id,
-                message.author.display_name,
-                message.content,
-                message.created_at.isoformat()
-            ))
-            conn.commit()
-        except sqlite3.Error as e:
-            print(f"Erreur SQLite dans on_message_delete : {str(e)}")
-        finally:
-            conn.close()
-    @client.event
-    async def on_message(message):
-        if message.author == client.user and message.content == '-snipe':
-            try:
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT author_name, content, timestamp
-                    FROM deleted_messages
-                    WHERE channel_id = ?
-                ''', (message.channel.id,))
-                result = cursor.fetchone()
-                if not result or not result[1]:
-                    await message.channel.send("Aucun message supprimé récent trouvé dans ce salon.", delete_after=1)
-                    return
-                author, content, timestamp = result
-                timestamp = datetime.fromisoformat(timestamp).strftime('%Y-%m-%d à %H:%M')
-                snipe_message = (
-                    f"__**Dernier message supprimé**__\n"
-                    f"**Auteur** : {author}\n"
-                    f"**Contenu** : {content}\n"
-                    f"**Envoyé le** : {timestamp}"
-                )
-                await message.channel.send(snipe_message, delete_after=10)
-            except Exception as e:
-                print(f"Erreur : {str(e)}")
-            finally:
-                conn.close()
-        await client.process_commands(message)
+            await ctx.message.delete()
+        except discord.Forbidden:
+            print("Je n'ai pas la permission de supprimer le message.")
+        except discord.HTTPException as e:
+            if e.code == 20028:  
+                await asyncio.sleep(5)
+            else:
+                raise e
+
+        if not file_path:
+            print("Veuillez spécifier un fichier texte. Exemple : `-flood mots.txt`")
+            return
+        
+        if not os.path.isfile(file_path):
+            print(f"Le fichier '{file_path}' n'existe pas ou n'est pas accessible.")
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+                words = content.split()
+
+            if not words:
+                print("Le fichier est vide.")
+                return
+
+            sent_count = 0
+            print(f"Envoi de {len(words)} mot(s) en cours...")
+            for word in words:
+                if word.strip():
+                    try:
+                        await ctx.send(word)
+                        sent_count += 1
+                        await asyncio.sleep(0)  
+                    except discord.HTTPException as e:
+                        if e.code == 20028:  
+                            print("Limite de vitesse atteinte, je réessaye...")
+                            await asyncio.sleep(1)
+                            await ctx.send(word)
+                            sent_count += 1
+                        else:
+                            raise e
+
+            print(f"{sent_count} message(s) envoyé(s).")
+
+        except discord.Forbidden:
+            print("Je n'ai pas la permission d'envoyer des messages.")
+        except Exception as e:
+            print(f"Erreur : {str(e)}")
